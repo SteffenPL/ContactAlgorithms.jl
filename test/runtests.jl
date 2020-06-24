@@ -2,5 +2,5 @@ using ContactAlgorithms
 using Test
 
 @testset "ContactAlgorithms.jl" begin
-    # Write your tests here.
+    @test 1==1
 end
