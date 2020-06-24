@@ -1,0 +1,13 @@
+name = "ContactAlgorithms"
+uuid = "95ce497c-b8e3-4ee7-8c85-e1ccaa9bd12a"
+authors = ["Steffen Plunder, Jonathan Jahnke"]
+version = "0.1.0"
+
+[compat]
+julia = "1.4"
+
+[extras]
+Test = "8dfed614-e22c-5e08-85e1-65c5234f0b40"
+
+[targets]
+test = ["Test"]
