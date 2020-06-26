@@ -1,5 +1,6 @@
 module ContactAlgorithms
 
-# Write your package code here.
+include("constraints.jl")
+export c_coll
 
 end
