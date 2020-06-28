@@ -4,6 +4,8 @@ using ForwardDiff
 using ProgressMeter
 using NearestNeighbors
 
+using ContactAlgorithms
+
 # This is a one-file project. Simplicity is key.
 
 # Setup
@@ -16,15 +18,8 @@ w1 = (pos=[0., 0.], dir=[0.,1.])
 w2 = (pos=[0., height], dir=[0.,-1.])
 w3 = (pos=[0., 0.], dir=[1.,0.])
 w4 = (pos=[width, 0.], dir=[-1.,0.])
+walls = (w1,w2,w3,w4)
 
-# wall constraints
-function c_wall(x, wall)
-    return dot( x - wall.pos, wall.dir )
-end
-# friction constraint
-function c_wall_friction(x_old,x,wall)
-    return dot( x_old - x, [-wall.dir[2],wall.dir[1]])
-end
 
 # initial state
 N = 30
@@ -69,6 +64,7 @@ dtₛ = dt / n_steps
 t_end = 10.
 α = 0.9
 γ = 0.3
+R_collision_detection = 4. * R
 
 # simulate
 let x0=x0, v0=v0
@@ -88,26 +84,21 @@ let x0=x0, v0=v0
         # detect collisions
         balltree = KDTree(x, reorder=false)
 
-        idxs_1 = inrange(balltree, x, 2.2*R, false)
-
-        x_estim = x + dt * v + dt^2 * M_inv .* ( F(x) .- γ * v)
-        idxs_2 = inrange(balltree, x_estim, 2.2*R, false)
-
-        idxs = [ union(a,b) for (a,b) in zip(idxs_1,idxs_2) ]
-
+        idxs = inrange(balltree, x, R_collision_detection, false)
 
         # solve collisions
         for n = 1:((t <= dt) ? 20*n_stab : n_stab)
             # particles constraints
             for i = 1:N
                 for j = idxs[i]
-                    if j != i
+                    if j < i
                         c = c_coll(x[:,i], x[:,j], R)
                         if c < 0
                             Dcᵢ = ForwardDiff.gradient(z -> c_coll(z, x[:,j], R), x[:,i])
                             Dcⱼ = ForwardDiff.gradient(z -> c_coll(x[:,i], z, R), x[:,j])
-                            Δλᵢ = -c / ( (Dcᵢ)' * M_inv[i] * Dcᵢ + α )
-                            Δλⱼ = -c / ( (Dcⱼ)' * M_inv[j] * Dcⱼ + α )
+                            denom = (Dcᵢ)' * M_inv[i] * Dcᵢ + (Dcⱼ)' * M_inv[j] * Dcⱼ + α
+                            Δλᵢ = -c / denom
+                            Δλⱼ = -c / denom
                             Δxᵢ = M_inv[i] * Dcᵢ * Δλᵢ
                             Δxⱼ = M_inv[j] * Dcⱼ * Δλⱼ
                             x[:,i] += Δxᵢ/n_stab
@@ -133,12 +124,6 @@ let x0=x0, v0=v0
                         Δλ = -c / ( Dc' * M_inv[i] * Dc + α )
                         Δx = M_inv[i] * Dc * Δλ
                         x[:,i] += Δx
-                        cf = c_wall_friction(x_old[:,i],x[:,i],wall)
-                        Dcf = ForwardDiff.gradient(z-> c_wall_friction(x_old[:,i],z,wall), x[:,i])
-                        Δλf = -cf/(Dcf' * M_inv[i] * Dcf + α)
-                        Δλf = sign(Δλf)*min(μ*Δλ,abs(Δλf))
-                        Δxf = M_inv[i]*Dcf*Δλf
-                        x[:,i] += Δxf
                     end
                 end
             end
@@ -146,30 +131,18 @@ let x0=x0, v0=v0
             # particles constraints
             for i = 1:N
                 for j = idxs[i]
-                    if j != i
+                    if j < i
                         c = c_coll(x[:,i], x[:,j], R)
                         if c < 0
                             Dcᵢ = ForwardDiff.gradient(z -> c_coll(z, x[:,j], R), x[:,i])
                             Dcⱼ = ForwardDiff.gradient(z -> c_coll(x[:,i], z, R), x[:,j])
-                            Δλᵢ = -c / ( (Dcᵢ)' * M_inv[i] * Dcᵢ + α )
-                            Δλⱼ = -c / ( (Dcⱼ)' * M_inv[j] * Dcⱼ + α )
+                            denom = (Dcᵢ)' * M_inv[i] * Dcᵢ + (Dcⱼ)' * M_inv[j] * Dcⱼ + α
+                            Δλᵢ = -c / denom
+                            Δλⱼ = -c / denom
                             Δxᵢ = M_inv[i] * Dcᵢ * Δλᵢ
                             Δxⱼ = M_inv[j] * Dcⱼ * Δλⱼ
-                            x[:,i] += 0.5*Δxᵢ
-                            x[:,j] += 0.5*Δxⱼ
-                            # friction(x_old,x,y_old,y,R)
-                            Dcfᵢ = ForwardDiff.gradient(z -> c_coll_friction(x_old[:,i],z,x_old[:,j],x[:,j], R), x[:,i])
-                            Dcfⱼ = ForwardDiff.gradient(z -> c_coll_friction(x_old[:,i], x[:,i],x_old[:,j],z, R), x[:,j])
-                            cf = c_coll_friction(x_old[:,i], x[:,i],x_old[:,j],x[:,j], R)
-                            Δλfᵢ = -cf / ( (Dcfᵢ)' * M_inv[i] * Dcfᵢ + α )
-                            Δλfⱼ = -cf / ( (Dcfⱼ)' * M_inv[j] * Dcfⱼ + α )
-                            Δλfᵢ = sign(Δλfᵢ)*min(μ*Δλᵢ,abs(Δλfᵢ))
-                            Δλfⱼ = sign(Δλfⱼ)*min(μ*Δλⱼ,abs(Δλfⱼ))
-                            Δxfᵢ = M_inv[i] * Dcfᵢ * Δλfᵢ
-                            Δxfⱼ = M_inv[j] * Dcfⱼ * Δλfⱼ
-                            x[:,i] += 0.5*Δxfᵢ
-                            x[:,j] += 0.5*Δxfⱼ
-
+                            x[:,i] += Δxᵢ
+                            x[:,j] += Δxⱼ
                         end
                     end
                 end

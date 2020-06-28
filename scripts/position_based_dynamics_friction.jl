@@ -35,6 +35,7 @@ R = 0.3
 M = ones(N)' # mass
 M_inv = M.^(-1) # inverse mass
 μ = 0.3
+
 # collision constraints
 function c_coll(x, y, R)
     return sqrt(sum((x-y).^2)) - 2*R
@@ -61,8 +62,9 @@ n_stab = 2
 n_steps = 10 # internal steps
 dtₛ = dt / n_steps
 t_end = 10.
-α = 0.9
+α = 0.0
 γ = 0.3
+R_collision_detection = 4. * R
 
 # simulate
 let x0=x0, v0=v0
@@ -82,20 +84,14 @@ let x0=x0, v0=v0
         # detect collisions
         balltree = KDTree(x, reorder=false)
 
-        idxs_1 = inrange(balltree, x, 2.2*R, false)
-
-        x_estim = x + dt * v + dt^2 * M_inv .* ( F(x) .- γ * v)
-        idxs_2 = inrange(balltree, x_estim, 2.2*R, false)
-
-        idxs = [ union(a,b) for (a,b) in zip(idxs_1,idxs_2) ]
-
+        idxs = inrange(balltree, x, R_collision_detection, false)
 
         # solve collisions
         for n = 1:((t <= dt) ? 20*n_stab : n_stab)
             # particles constraints
             for i = 1:N
                 for j = idxs[i]
-                    if j != i
+                    if j < i
                         c = c_coll(x[:,i], x[:,j], R)
                         if c < 0
                             Dcᵢ = ForwardDiff.gradient(z -> c_coll(z, x[:,j], R), x[:,i])
