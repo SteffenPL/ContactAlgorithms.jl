@@ -34,17 +34,25 @@ R = 0.3
 
 M = ones(N)' # mass
 M_inv = M.^(-1) # inverse mass
-μ = 0.3
+μ = 0.1
 
+# small steps stuff
+d0 = zeros(1,N)
+d0wall = zeros(1,N)
+v_max = 5
 # collision constraints
 function c_coll(x, y, R)
     return sqrt(sum((x-y).^2)) - 2*R
 end
-function c_coll_friction(x_old,x,y_old,y,R)
-    normal = x - y / sqrt(sum((x-y).^2))
-    tangential = [-normal[2],normal[1]]
-    return dot(x_old-y_old - (x - y),tangential)
+
+function c_coll_vmax(x, y, R, i)
+    return sqrt(sum((x-y).^2)) - 2*R+max(d0[i]-v_max*dtₛ,0)
 end
+# wall constraints
+function c_wall_vmax(x, wall,i)
+    return dot( x - wall.pos, wall.dir )+max(d0wall[i]-v_max*dtₛ,0)
+end
+
 # forces
 F(x) = [0., -5.]
 #F(x) = [5., 5.] .- x
@@ -57,18 +65,18 @@ savefig("initial_plot.png")
 anim = Animation()
 show_frames = true
 
-dt = 0.1
+dt = 0.5
 #n_stab = 2
 n_steps = 10 # internal steps
 dtₛ = dt / n_steps
-t_end = 5.
+t_end = 10.
 α = 0.0
 γ = 0.3
 R_collision_detection = 4. * R
 
 # simulate
 let x0=x0, v0=v0
-    global t, X, V
+    global t, X, V, d0, d0wall
     t = 0
     X = [x0]
     V = [v0]
@@ -80,11 +88,28 @@ let x0=x0, v0=v0
 
         x = X[end]
         v = V[end]
-
         # detect collisions
         balltree = KDTree(x, reorder=false)
 
         idxs = inrange(balltree, x, R_collision_detection, false)
+        for i = 1:N
+            for j = idxs[i]
+                if j < i
+                    c = c_coll(x[:,i], x[:,j], R)
+                    if c < 0
+                        d0[i] = -c
+                    end
+                end
+            end
+        end
+        for wall in (w1,w2,w3,w4)
+            for i = 1:N
+                c = c_wall(x[:,i], wall)
+                if c < 0
+                    d0wall[i] = -c
+                end
+            end
+        end
 
         # solve collisions
         for n = 1:n_steps
@@ -95,18 +120,12 @@ let x0=x0, v0=v0
             # wall constraints
             for wall in (w1,w2,w3,w4)
                 for i = 1:N
-                    c = c_wall(x[:,i], wall)
+                    c = c_wall_vmax(x[:,i], wall,i)
                     if c < 0
-                        Dc = ForwardDiff.gradient(z -> c_wall(z,wall), x[:,i])
+                        Dc = ForwardDiff.gradient(z -> c_wall_vmax(z,wall,i), x[:,i])
                         Δλ = -c / ( Dc' * M_inv[i] * Dc + α )
                         Δx = M_inv[i] * Dc * Δλ
                         x[:,i] += Δx
-                        cf = c_wall_friction(x_old[:,i],x[:,i],wall)
-                        Dcf = ForwardDiff.gradient(z-> c_wall_friction(x_old[:,i],z,wall), x[:,i])
-                        Δλf = -cf/(Dcf' * M_inv[i] * Dcf + α)
-                        Δλf = sign(Δλf)*min(μ*Δλ,abs(Δλf))
-                        Δxf = M_inv[i]*Dcf*Δλf
-                        x[:,i] += Δxf
                     end
                 end
             end
@@ -115,10 +134,10 @@ let x0=x0, v0=v0
             for i = 1:N
                 for j = idxs[i]
                     if j < i
-                        c = c_coll(x[:,i], x[:,j], R)
+                        c = c_coll_vmax(x[:,i], x[:,j], R,i)
                         if c < 0
-                            Dcᵢ = ForwardDiff.gradient(z -> c_coll(z, x[:,j], R), x[:,i])
-                            Dcⱼ = ForwardDiff.gradient(z -> c_coll(x[:,i], z, R), x[:,j])
+                            Dcᵢ = ForwardDiff.gradient(z -> c_coll_vmax(z, x[:,j], R, i), x[:,i])
+                            Dcⱼ = ForwardDiff.gradient(z -> c_coll_vmax(x[:,i], z, R, i), x[:,j])
                             denom = (Dcᵢ)' * M_inv[i] * Dcᵢ + (Dcⱼ)' * M_inv[j] * Dcⱼ + α
                             Δλᵢ = -c / denom
                             Δλⱼ = -c / denom
@@ -126,19 +145,6 @@ let x0=x0, v0=v0
                             Δxⱼ = M_inv[j] * Dcⱼ * Δλⱼ
                             x[:,i] += Δxᵢ
                             x[:,j] += Δxⱼ
-                            # friction(x_old,x,y_old,y,R)
-                            cf = c_coll_friction(x_old[:,i], x[:,i],x_old[:,j],x[:,j], R)
-                            Dcfᵢ = ForwardDiff.gradient(z -> c_coll_friction(x_old[:,i],z,x_old[:,j],x[:,j], R), x[:,i])
-                            Dcfⱼ = ForwardDiff.gradient(z -> c_coll_friction(x_old[:,i], x[:,i],x_old[:,j],z, R), x[:,j])
-                            denom = (Dcfᵢ)' * M_inv[i] * Dcfᵢ + (Dcfⱼ)' * M_inv[j] * Dcfⱼ + α
-                            Δλfᵢ = -cf / denom
-                            Δλfⱼ = -cf / denom
-                            Δλfᵢ = sign(Δλfᵢ)*min(μ*Δλᵢ,abs(Δλfᵢ))
-                            Δλfⱼ = sign(Δλfⱼ)*min(μ*Δλⱼ,abs(Δλfⱼ))
-                            Δxfᵢ = M_inv[i] * Dcfᵢ * Δλfᵢ
-                            Δxfⱼ = M_inv[j] * Dcfⱼ * Δλfⱼ
-                            x[:,i] += Δxfᵢ
-                            x[:,j] += Δxfⱼ
                         end
                     end
                 end
@@ -171,4 +177,4 @@ if !show_frames
     end
 end
 
-gif(anim, "output.gif", fps=30)
+gif(anim, "output.gif", fps=10)
