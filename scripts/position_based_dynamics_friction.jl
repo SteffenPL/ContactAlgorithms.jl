@@ -150,18 +150,24 @@ let x0=x0, v0=v0
                             x[:,i] += Δxᵢ
                             x[:,j] += Δxⱼ
                             # friction(x_old,x,y_old,y,R)
-                            cf = c_coll_friction(x_old[:,i], x[:,i],x_old[:,j],x[:,j], R)
-                            Dcfᵢ = ForwardDiff.gradient(z -> c_coll_friction(x_old[:,i],z,x_old[:,j],x[:,j], R), x[:,i])
-                            Dcfⱼ = ForwardDiff.gradient(z -> c_coll_friction(x_old[:,i], x[:,i],x_old[:,j],z, R), x[:,j])
-                            denom = (Dcfᵢ)' * M_inv[i] * Dcfᵢ + (Dcfⱼ)' * M_inv[j] * Dcfⱼ + α
-                            Δλfᵢ = -cf / denom
-                            Δλfⱼ = -cf / denom
-                            Δλfᵢ = sign(Δλfᵢ)*min(μ*Δλᵢ,abs(Δλfᵢ))
-                            Δλfⱼ = sign(Δλfⱼ)*min(μ*Δλⱼ,abs(Δλfⱼ))
-                            Δxfᵢ = M_inv[i] * Dcfᵢ * Δλfᵢ
-                            Δxfⱼ = M_inv[j] * Dcfⱼ * Δλfⱼ
-                            x[:,i] += Δxfᵢ
-                            x[:,j] += Δxfⱼ
+cf = c_coll_friction(x_old[:, i], x[:, i], x_old[:, j], x[:, j], R)
+Dcfᵢ = ForwardDiff.gradient(
+    z -> c_coll_friction(x_old[:, i], z, x_old[:, j], x[:, j], R),
+    x[:, i],
+)
+Dcfⱼ = ForwardDiff.gradient(
+    z -> c_coll_friction(x_old[:, i], x[:, i], x_old[:, j], z, R),
+    x[:, j],
+)
+denom = (Dcfᵢ)' * M_inv[i] * Dcfᵢ + (Dcfⱼ)' * M_inv[j] * Dcfⱼ + α
+Δλfᵢ = -cf / denom
+Δλfⱼ = -cf / denom
+Δλfᵢ = sign(Δλfᵢ) * min(μ * Δλᵢ, abs(Δλfᵢ))
+Δλfⱼ = sign(Δλfⱼ) * min(μ * Δλⱼ, abs(Δλfⱼ))
+Δxfᵢ = M_inv[i] * Dcfᵢ * Δλfᵢ
+Δxfⱼ = M_inv[j] * Dcfⱼ * Δλfⱼ
+x[:, i] += Δxfᵢ
+x[:, j] += Δxfⱼ
 
                         end
                     end

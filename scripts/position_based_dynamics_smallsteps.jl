@@ -26,9 +26,9 @@ sqN = Int(round(sqrt(N)))
 N = sqN * sqN
 d = 2
 x0 = hcat( [[x,y]
-            for x in range(0.3*width, stop=0.7*width, length=sqN)
-            for y in range(0.1*height, stop=0.6*height, length=sqN)]...  )
-x0 += 0.01 * randn(d,N)
+            for x in range(0.25*width, stop=0.75*width, length=sqN)
+            for y in range(0.15*height, stop=0.75*height, length=sqN)]...  )
+x0 += 0.1 * randn(d,N)
 v0 = zeros(d,N)
 R = 0.3
 
